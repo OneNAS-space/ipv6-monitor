@@ -10,3 +10,18 @@ start_service() {
     procd_set_param respawn
     procd_close_instance
 }
+
+stop_service() {
+    killall $(basename $PROG) 2>/dev/null
+}
+
+reload_service() {
+    echo "Reloading $PROG ..."
+    stop_service
+    sleep 1
+    start_service
+}
+
+service_triggers() {
+    procd_add_reload_trigger "network"
+}
