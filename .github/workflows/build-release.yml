@@ -37,6 +37,8 @@ jobs:
       - name: Resolve version
         id: resolve
         run: |
+          REL=""
+
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_version }}" ]]; then
             REL="${{ github.event.inputs.release_version }}"
             echo "Using manually specified version: ${REL}"
@@ -47,7 +49,12 @@ jobs:
             sed -i "s/^PKG_RELEASE:=.*/PKG_RELEASE:=${REL}/" Makefile
 
           elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
-            CHANGED=$(git diff --name-only HEAD~1)
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              CHANGED=$(git diff --name-only HEAD~1)
+            else
+              echo "No previous commit, assuming changes present"
+              CHANGED="Makefile"
+            fi
 
             if echo "$CHANGED" | grep -Eq '^(Makefile|files/)'; then
               if echo "$CHANGED" | grep -Eq '^files/'; then
@@ -64,16 +71,20 @@ jobs:
                 git commit -m "ci: bump PKG_VERSION to ${NEW_VER} [skip ci]" || true
                 git push origin HEAD:main || true
               fi
-
-              REL=$(grep -E '^PKG_RELEASE:=' Makefile | sed 's/^PKG_RELEASE:=//')
-              echo "Using PKG_RELEASE from Makefile as version: ${REL}"
             else
               echo "No relevant changes detected, skipping release"
               REL=""
             fi
           fi
 
-          echo "resolved_tag=${REL}" >> "$GITHUB_ENV"
+          PKG_VERSION=$(grep -E '^PKG_VERSION:=' Makefile | sed 's/^PKG_VERSION:=//')
+          PKG_RELEASE=$(grep -E '^PKG_RELEASE:=' Makefile | sed 's/^PKG_RELEASE:=//')
+          if [[ -z "$REL" ]]; then
+            REL="${PKG_VERSION}-${PKG_RELEASE}"
+          fi
+
+          echo "Resolved full version: $REL"
+          echo "resolved_tag=$REL" >> "$GITHUB_OUTPUT"
 
       - name: 📛 Extract PKG_NAME from Makefile
         run: |
