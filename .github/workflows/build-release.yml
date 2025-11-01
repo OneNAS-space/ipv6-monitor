@@ -16,6 +16,15 @@ jobs:
   build:
     name: Build for ipv6-monitor
     runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: openwrt-24.10
+            target: x86_64
+            suffix: all
+            
     outputs:
       resolved_tag: ${{ steps.resolve.outputs.resolved_tag }}
 
@@ -86,9 +95,14 @@ jobs:
             --exclude='SECURITY.md' \
             ./ feed/jackie264/${PKG_NAME}/
 
+      - name: 🧮 Compute ARCH
+        run: |
+          echo "ARCH=${{ matrix.target }}-${{ matrix.version }}" >> "$GITHUB_ENV"
+
       - name: 🏗️ Build with OpenWrt SDK
         uses: openwrt/gh-action-sdk@v9
         env:
+          ARCH: ${{ env.ARCH }}
           FEEDNAME: jackie264
           PACKAGES: ${{ env.PKG_NAME }}
           INDEX: 0
