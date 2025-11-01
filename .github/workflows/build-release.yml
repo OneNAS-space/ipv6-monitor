@@ -183,7 +183,7 @@ jobs:
             pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
             echo "Processing $pkgname into common"
             mkdir -p custom-packages/common
-            echo "Cleaning old versions of $pkgname in universal"
+            echo "Cleaning old versions of $pkgname in common"
             rm -f custom-packages/common/${pkgname}_*.ipk
             cp "$f" custom-packages/common/
           done
