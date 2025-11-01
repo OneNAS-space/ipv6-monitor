@@ -1,0 +1,172 @@
+permissions:
+  contents: write
+name: Build OpenWrt Package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Makefile'
+      - 'files/**'
+      - '!**/.github/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ipv6-monitor
+    runs-on: ubuntu-latest
+    outputs:
+      resolved_tag: ${{ steps.resolve.outputs.resolved_tag }}
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: resolve
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_version }}" ]]; then
+            REL="${{ github.event.inputs.release_version }}"
+            echo "Using manually specified version: ${REL}"
+
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            REL="${GITHUB_REF_NAME}"
+            echo "Using tag as version: ${REL}"
+            sed -i "s/^PKG_RELEASE:=.*/PKG_RELEASE:=${REL}/" Makefile
+
+          elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            CHANGED=$(git diff --name-only HEAD~1)
+
+            if echo "$CHANGED" | grep -Eq '^(Makefile|files/)'; then
+              if echo "$CHANGED" | grep -Eq '^files/'; then
+                CUR_VER=$(grep -E '^PKG_VERSION:=' Makefile | sed 's/^PKG_VERSION:=//')
+                IFS='.' read -r major minor patch <<< "$CUR_VER"
+                patch=$((patch + 1))
+                NEW_VER="${major}.${minor}.${patch}"
+                sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${NEW_VER}/" Makefile
+                echo "Source code changed, PKG_VERSION incremented: ${CUR_VER} → ${NEW_VER}"
+
+                git config user.name "github-actions[bot]"
+                git config user.email "github-actions[bot]@users.noreply.github.com"
+                git add Makefile
+                git commit -m "ci: bump PKG_VERSION to ${NEW_VER} [skip ci]" || true
+                git push origin HEAD:main || true
+              fi
+
+              REL=$(grep -E '^PKG_RELEASE:=' Makefile | sed 's/^PKG_RELEASE:=//')
+              echo "Using PKG_RELEASE from Makefile as version: ${REL}"
+            else
+              echo "No relevant changes detected, skipping release"
+              REL=""
+            fi
+          fi
+
+          echo "resolved_tag=${REL}" >> "$GITHUB_ENV"
+
+      - name: 📛 Extract PKG_NAME from Makefile
+        run: |
+          PKG_NAME=$(grep -E '^PKG_NAME[:?]?=' Makefile | head -n1 | sed -E 's/PKG_NAME[:?]?= *//')
+          echo "PKG_NAME=$PKG_NAME" >> "$GITHUB_ENV"
+
+      - name: 🧰 Set up ipv6-monitor feed structure
+        run: |
+          set -e
+          mkdir -p feed/jackie264
+          printf 'include $(TOPDIR)/feed/jackie264/*/Makefile\n' > feed/jackie264/custom.mk
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='feed' \
+            --exclude='.github' \
+            --exclude='LICENSE' \
+            --exclude='README.md' \
+            --exclude='SECURITY.md' \
+            ./ feed/jackie264/${PKG_NAME}/
+
+      - name: 🏗️ Build with OpenWrt SDK
+        uses: openwrt/gh-action-sdk@v9
+        env:
+          FEEDNAME: jackie264
+          PACKAGES: ${{ env.PKG_NAME }}
+          INDEX: 0
+          FEED_DIR: ${{ github.workspace }}/feed
+          NO_SHFMT_CHECK: 1
+          NO_REFRESH_CHECK: 1
+          
+      - name: 🔍 Debug build output
+        run: |
+          echo "=== Build directory structure ==="
+          find . -name "*.ipk" -type f 2>/dev/null || echo "No .ipk files found"
+          echo "=== bin directory structure ==="
+          ls -la bin/ 2>/dev/null || echo "No bin directory found"
+          if [ -d "bin/packages" ]; then
+            echo "=== packages directory structure ==="
+            find bin/packages/ -type f -name "*.ipk" 2>/dev/null || echo "No .ipk files in packages directory"
+            echo "=== Full packages directory tree ==="
+            ls -laR bin/packages/ 2>/dev/null || echo "No packages directory"
+          fi
+
+      - name: 📦 Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.PKG_NAME }}-${{ github.run_number }}
+          path: |
+            bin/packages/*/jackie264/ipv6-monitor*.ipk
+          if-no-files-found: error
+
+  release:
+    name: Release ${{ github.repository }}
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+
+      - name: ⬇️ Download all build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: ./release-assets
+
+      - name: 🗃️ Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.resolved_tag }}
+          name: Build-v${{ needs.build.outputs.resolved_tag }}
+          files: |
+            ./release-assets/**/ipv6-monitor*.ipk
+          draft: false
+          prerelease: false
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout custom-packages repo
+        uses: actions/checkout@v5
+        with:
+          repository: OneNAS-space/custom-packages
+          token: ${{ secrets.CUSTOM_PACKAGES_TOKEN }}
+          path: custom-packages
+
+      - name: 📂 Copy artifacts into repo
+        run: |
+          find ./release-assets -type f -name "ipv6-monitor*.ipk" | while read -r f; do
+            base=$(basename "$f")
+            pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
+            echo "Processing $pkgname into universal"
+            mkdir -p custom-packages/universal
+            echo "Cleaning old versions of $pkgname in universal"
+            rm -f custom-packages/universal/${pkgname}_*.ipk
+            cp "$f" custom-packages/universal/
+          done
+          ls -laR custom-packages
+
+      - name: Update pkg artifacts
+        run: |
+          cd custom-packages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update to - v${{ steps.version.outputs.full_version }}" || echo "No changes"
+          git push
