@@ -1,3 +1,5 @@
+# Copyright 2025 OneNAS.space, Jackie264 (jackie.han@gmail.com).
+
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ipv6-monitor
