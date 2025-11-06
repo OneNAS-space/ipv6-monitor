@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ipv6-monitor
 PKG_VERSION:=1.0.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 
@@ -47,6 +47,12 @@ endef
 define Package/ipv6-monitor/postinst
 #!/bin/sh
 [ -n "$$IPKG_INSTROOT" ] || /etc/init.d/ipv6-monitor enable
+exit 0
+endef
+
+define Package/ipv6-monitor/prerm
+#!/bin/sh
+[ -z "$${IPKG_INSTROOT}" ] || /etc/init.d/ipv6-monitor disable
 exit 0
 endef
 
