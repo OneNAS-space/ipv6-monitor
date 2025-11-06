@@ -25,6 +25,7 @@ CPU_INFO=$(top -bn1 | grep "^CPU:" | sed 's/^CPU:[[:space:]]*//')
 ROOT_USAGE=$(df -h / | awk 'NR==2 {print $5 " of " $2}')
 MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
 MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
+
 if [ "$MEM_TOTAL" -eq 0 ]; then
     MEM_PCT=0
 else
@@ -33,8 +34,6 @@ fi
 
 PROCESSES=$(ps | wc -l)
 PROCESSES=$((PROCESSES - 1))
-
-LOGGED_IN_USERS=1
 
 # --- Interface and IP Gatherers ---
 WAN_INFO_LINES=""
@@ -148,12 +147,11 @@ get_lan_interfaces_and_ips
 
 echo " System information as of $CURRENT_DATETIME"
 echo ""
-echo "   System load:     $LOADAVG"
-echo "   CPU usage:       $CPU_INFO"
-echo "   Disk usage:      $ROOT_USAGE"
-echo "   Memory usage:    ${MEM_PCT}%"
-echo "   Processes:       $PROCESSES"
-echo "   Users logged in: $LOGGED_IN_USERS"
+echo " System load:     $LOADAVG"
+echo " CPU usage:       $CPU_INFO"
+echo " Disk usage:      $ROOT_USAGE"
+echo " Memory usage:    ${MEM_PCT}%"
+echo " Processes:       $PROCESSES"
 echo ""
 
 WAN_PRINTED=0
