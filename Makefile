@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=ipv6-monitor
 PKG_VERSION:=1.0.3
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 
@@ -39,9 +39,6 @@ define Package/ipv6-monitor/install
 
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
 	$(INSTALL_BIN) ./files/etc/hotplug.d/iface/99-wan6-trigger $(1)/etc/hotplug.d/iface/99-wan6-trigger
-
-	$(INSTALL_DIR) $(1)/root
-	$(INSTALL_BIN) ./files/root/sysinfo.sh $(1)/root/sysinfo.sh
 endef
 
 define Package/ipv6-monitor/postinst
