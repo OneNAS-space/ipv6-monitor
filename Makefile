@@ -39,9 +39,6 @@ define Package/ipv6-monitor/install
 
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
 	$(INSTALL_BIN) ./files/etc/hotplug.d/iface/99-wan6-trigger $(1)/etc/hotplug.d/iface/99-wan6-trigger
-
-	$(INSTALL_DIR) $(1)/root
-	$(INSTALL_BIN) ./files/root/sysinfo.sh $(1)/root/sysinfo.sh
 endef
 
 define Package/ipv6-monitor/postinst
