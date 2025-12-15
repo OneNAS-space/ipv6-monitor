@@ -1,56 +1,50 @@
 #!/bin/sh
 # 文件名: /etc/hotplug.d/iface/90-ipv6-pd-monitor
+# 功能: 监听 wan6 状态变化，在 PD 缺失时自动重启 wan6 接口进行恢复。
+# 检查逻辑: 直接检查 wan6 接口的 ipv6-prefix 字段是否为空。
 
 # --- 变量定义 ---
-# 负责获取 PD 的接口 (需要被重启的接口)
 WAN_IFACE="wan6" 
-# 负责分配 PD 的接口 (用于状态检查的接口)
-LAN_IFACE="lan"  
-# 日志文件
-LOG_FILE="/var/log/ipv6-pd-monitor.log"
-# 重启接口前的等待时间 (秒)
 RECOVERY_DELAY=3 
+INITIAL_WAIT=5  
+LOG_FILE="/var/log/ipv6-pd-monitor.log"
 
 log() {
-    # 记录到系统日志 (logger) 和指定文件
     logger -t ipv6-pd-monitor "$1"
     echo "$(date '+%Y-%m-%d %H:%M:%S') [Hotplug] $1" >> "$LOG_FILE"
 }
 
 # 1. Hotplug 触发条件检查
-# 仅对 lan 接口的 ifup 和 ifupdate 事件感兴趣
-# 因为 PD 最终的分配状态会反映在 lan 接口的状态更新上
-if [ "$INTERFACE" != "$LAN_IFACE" ]; then
-    exit 0
-fi
+[ "$INTERFACE" != "$WAN_IFACE" ] && exit 0
 
 case "$ACTION" in
-    # 接口启动 (ifup) 或状态更新 (ifupdate) 时执行检查
     ifup|ifupdate)
-        log "检测到 $LAN_IFACE 接口状态变更 ($ACTION)，开始检查 IPv6-PD 分配状态..."
+        # 仅在接口逻辑上报 Up 时才检查
+        if (ifstatus $WAN_IFACE | grep -q '"up": true'); then
+            log "检测到 $WAN_IFACE 接口成功连接 ($ACTION)。等待 $INITIAL_WAIT 秒给 DHCPv6 客户端获取 PD..."
+            
+            sleep $INITIAL_WAIT
 
-        # 2. 精确检查 PD 状态 (使用 ifstatus + jsonfilter)
-        # 提取 LAN 接口上第一个分配到的 IPv6 前缀地址 (address)
-        # 如果没有分配，jsonfilter 将返回空字符串
-        PD_PREFIX=$(ifstatus $LAN_IFACE | jsonfilter -e '@["ipv6-prefix-assignment"][0].address' 2>/dev/null)
-        
-        if [ -z "$PD_PREFIX" ]; then
-            # 3. PD 缺失：执行恢复操作 (操作 wan6 接口)
-            log "🔥 警告：未检测到有效的 IPv6-PD 分配。尝试重启 $WAN_IFACE 接口进行恢复..."
+            # --- 关键检查逻辑：直接检查 wan6 接口获取的 PD 前缀 ---
+            # 提取 wan6 接口上所有 'ipv6-prefix' 字段的地址。
+            # 如果成功获取 PD，此数组非空；如果失败，则为空。
+            PD_PREFIX=$(ifstatus $WAN_IFACE | jsonfilter -e '@["ipv6-prefix"][*].address' 2>/dev/null | head -n 1)
             
-            # 使用 netifd 提供的 ifdown/ifup 命令安全地操作接口
-            ifdown $WAN_IFACE
-            sleep $RECOVERY_DELAY
-            ifup $WAN_IFACE
-            
-            log "已发送重启 $WAN_IFACE 命令。等待 netifd 重新获取 PD..."
-        else
-            log "✅ 检查正常：IPv6-PD 正常。已分配前缀: $PD_PREFIX/64。无需操作。"
+            # --- 3. 判断是否需要恢复 ---
+            if [ -z "$PD_PREFIX" ]; then
+                log "🔥 警告：$WAN_IFACE 状态 UP，但未检测到 IPv6-PD 前缀。"
+                log "尝试重启 $WAN_IFACE 接口进行恢复..."
+                
+                # 执行 ifdown/ifup wan6 恢复操作
+                ifdown $WAN_IFACE
+                sleep $RECOVERY_DELAY
+                ifup $WAN_IFACE
+                
+                log "已发送重启 $WAN_IFACE 命令。等待 netifd 重新获取 PD..."
+            else
+                log "✅ 检查正常：IPv6-PD 正常。已获取前缀: $PD_PREFIX/64。无需操作。"
+            fi
         fi
-        ;;
-    *)
-        # 忽略其他 hotplug action (如 ifdown, link up/down)
-        exit 0
         ;;
 esac
 
