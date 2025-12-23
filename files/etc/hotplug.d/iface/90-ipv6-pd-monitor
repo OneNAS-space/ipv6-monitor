@@ -35,6 +35,10 @@ case "$ACTION" in
                 log "Restarting $WAN_IFACE. Wait for netifd to re-obtain PD..."
             else
                 log "✅ IPv6-PD is obtained: $PD_PREFIX. No need to operate."
+                if [ -x "/etc/init.d/bypass_guard" ]; then
+                    log "🔄 Triggering bypass_guard refresh..."
+                    /etc/init.d/bypass_guard refresh_nft
+                fi
             fi
         fi
         ;;
