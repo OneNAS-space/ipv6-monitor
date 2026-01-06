@@ -112,23 +112,20 @@ jobs:
 
       - name: 🛠️ Hijack Mirror-03 to Main Download Server
         run: |
-          echo "=== Before Hijack ==="
-          ping -c 2 mirror-03.infra.openwrt.org || true
-          
           # 获取官方主站的 IP 地址
           MAIN_IP=$(dig +short downloads.openwrt.org | tail -n1)
           
-          # 如果 dig 没获取到（极端情况），使用官方备用 IP
-          if [ -z "$MAIN_IP" ]; then MAIN_IP="147.75.114.249"; fi
+          # 如果 dig 没获取到，使用已知稳定的 Fastly CDN IP
+          if [ -z "$MAIN_IP" ]; then MAIN_IP="146.75.78.132"; fi
           
           echo "Targeting IP: $MAIN_IP"
           
           # 写入 hosts 文件，强制重定向
+          # 使用 sudo tee 确保权限，并去掉 ping 避免报错
           sudo echo "$MAIN_IP mirror-03.infra.openwrt.org" | sudo tee -a /etc/hosts
           
-          echo "=== After Hijack ==="
-          ping -c 2 mirror-03.infra.openwrt.org
-          echo "Mirror-03 is now redirected to downloads.openwrt.org ($MAIN_IP)"
+          echo "Verification: "
+          getent hosts mirror-03.infra.openwrt.org
           
       - name: 🏗️ Build with OpenWrt SDK
         uses: openwrt/gh-action-sdk@v10
