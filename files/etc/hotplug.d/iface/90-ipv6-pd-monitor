@@ -4,6 +4,7 @@ WAN_IFACE="wan6"
 RECOVERY_DELAY=3
 INITIAL_WAIT=30
 LOG_FILE="/var/log/ipv6-pd-monitor.log"
+PD_CACHE="/tmp/ipv6_pd_last_prefix"
 
 log() {
     logger -t ipv6-pd-monitor "$1"
@@ -15,29 +16,25 @@ log() {
 
 case "$ACTION" in
     ifup|ifupdate)
-        # Check only when the interface logic is reported up.
-        if (ifstatus $WAN_IFACE | grep -q '"up": true'); then
-            log "$WAN_IFACE STATUS ($ACTION). Wait for $INITIAL_WAIT seconds to get PD for DHCPv6 client..."
-
+        STATUS_DATA=$(ifstatus $WAN_IFACE)
+        IS_UP=$(echo "$STATUS_DATA" | jsonfilter -e '@["up"]')
+        if [ "$IS_UP" = "true" ]; then
             sleep $INITIAL_WAIT
-
-            # --- Key check logic: directly check the PD prefix obtained by the wan6 interface ---
-            PD_PREFIX=$(ifstatus $WAN_IFACE | jsonfilter -e '@["ipv6-prefix"][*].address' 2>/dev/null | head -n 1)
-
-            if [ -z "$PD_PREFIX" ]; then
-                log "🔥 Warning: $WAN_IFACE status UP, but the IPv6-PD prefix is not detected."
-                log "Try to restart the $WAN_IFACE interface for recovery..."
-
+            CURRENT_PD=$(ifstatus $WAN_IFACE | jsonfilter -e '@["ipv6-prefix"][*].address' 2>/dev/null | head -n 1)
+            if [ -z "$CURRENT_PD" ]; then
+                log "🔥 Warning: $WAN_IFACE is UP, but no IPv6-PD prefix found. Restarting interface..."
                 ifdown $WAN_IFACE
                 sleep $RECOVERY_DELAY
                 ifup $WAN_IFACE
-
-                log "Restarting $WAN_IFACE. Wait for netifd to re-obtain PD..."
             else
-                log "✅ IPv6-PD is obtained: $PD_PREFIX. No need to operate."
-                if [ -x "/etc/init.d/bypass_guard" ]; then
-                    log "🔄 Triggering bypass_guard refresh..."
-                    /etc/init.d/bypass_guard refresh_nft
+                LAST_PD=$(cat "$PD_CACHE" 2>/dev/null)
+                if [ "$CURRENT_PD" != "$LAST_PD" ]; then
+                    log "💡 IPv6-PD Change Detected: [${LAST_PD:-INIT}] -> [$CURRENT_PD]"
+                    echo "$CURRENT_PD" > "$PD_CACHE"
+                    if [ -x "/etc/init.d/bypass_guard" ]; then
+                        log "🔄 PD changed, refreshing bypass_guard rules..."
+                        /etc/init.d/bypass_guard refresh_nft
+                    fi
                 fi
             fi
         fi
