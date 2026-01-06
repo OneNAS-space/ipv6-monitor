@@ -120,6 +120,7 @@ jobs:
           FEED_DIR: ${{ github.workspace }}/feed
           NO_SHFMT_CHECK: 1
           NO_REFRESH_CHECK: 1
+          CONTAINER_MIRROR: https://downloads.openwrt.org
           
       - name: 🔍 Debug build output
         run: |
