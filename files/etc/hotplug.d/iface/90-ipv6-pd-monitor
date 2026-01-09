@@ -33,7 +33,7 @@ case "$ACTION" in
                     echo "$CURRENT_PD" > "$PD_CACHE"
                     if [ -x "/etc/init.d/bypass_guard" ]; then
                         log "🔄 PD changed, refreshing bypass_guard rules..."
-                        /etc/init.d/bypass_guard refresh_nft
+                        /etc/init.d/bypass_guard sync_clients
                     fi
                 fi
             fi
